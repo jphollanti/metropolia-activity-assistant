@@ -164,7 +164,9 @@
           callback(null);
         }
 
-        console.log('using user geo location lat/lng',userGeoLocation.lat,userGeoLocation.lng);
+        if (userGeoLocation) {
+          console.log('using user geo location lat/lng',userGeoLocation.lat,userGeoLocation.lng);  
+        }
       }
 
       function initMap(callback) {
