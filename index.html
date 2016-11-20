@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Activity Assistant</title>
+    <!-- Latest compiled and minified CSS -->
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css" integrity="sha384-BVYiiSIFeK1dGmJRAkycuHAHRg32OmUcww7on3RYdg4Va+PmSTsz/K68vbdEjh4u" crossorigin="anonymous">
+    <!-- Optional theme -->
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap-theme.min.css" integrity="sha384-rHyoN1iRsVXV4nD0JutlnGaslCJuC7uwjduW9SVrLvRYooPp2bWYgmgJQIXwl/Sp" crossorigin="anonymous">
+    <style>
+      span,p {
+        font-size: 24px;
+      }
+      .navbar a{
+        color:#333;
+      }
+      .navbar-brand {
+        font-style: italic;
+        font-size: 53px;
+        font-weight:bold;
+      }
+      #bg {
+        width:100%;
+        height:120px;
+        background-image: url(bg1.png);
+        background-repeat: repeat-x;
+        background-position: center;
+      }
+      .activity-btn {
+        width:400px;
+        margin:10px;
+        font-size: 24px;
+        /*background-image: linear-gradient(to bottom,#534854 0,#534854 100%);*/
+        /*border:1px solid #333;*/
+      }
+      .activity-btn:hover,
+      .activity-btn:active {
+        /*background-image: linear-gradient(to bottom,#8f6e67 0,#8f6e67 100%);
+        background-color: #8f6e67;*/
+      }
+      .loader-wrapper {
+        margin-top:30px;
+        width:100%;
+      }
+      .loader-text {
+        padding-bottom: 20px;
+        width:100%;
+        text-align: center;;
+      }
+      .loader {
+        border: 16px solid #f3f3f3; /* Light grey */
+        border-top: 16px solid #337ab7; /* Blue */
+        border-radius: 50%;
+        width: 120px;
+        height: 120px;
+        animation: spin 2s linear infinite;
+        margin: 0 auto;
+      }
+
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+
+      .forecast-time {
+        padding-top:10px;
+      }
+      .forecast-data {
+        font-weight: bold;
+        font-size:12px;
+        padding-left:20px;
+      }
+      .problem-header {
+        font-size:12px;
+        padding-left:20px;
+        font-weight: bold;
+        padding-bottom: 0;
+        margin-bottom: 0;
+      }
+      .problem-line {
+        font-size:12px;
+        padding-left:20px;
+        padding-bottom: 0;
+      }
+
+      div.thumb-img img {
+        max-width: 720px;
+      }
+
+      div.hardcoded-locations {
+        bottom:0;
+        position: absolute;
+      }
+      div.hardcoded-locations span,
+      div.hardcoded-locations p {
+        font-size: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <nav class="navbar">
+      <div class="container">
+        <div class="navbar-header">
+          <a class="navbar-brand" href="#">Activity Assistant</a>
+        </div>
+      </div>
+    </nav>
+
+    <div id="bg"></div>
+    <div class="container">
+      <div id="react-app" style="padding-top:40px;"></div>
+    </div>
+
+    <div class="container hardcoded-locations">
+      <span>Use a predefined location</span>
+      <input type="radio" name="hardcoded-location" value="none">None</input>
+      <input type="radio" name="hardcoded-location" value="abu-dhabi">Abu Dhabi</input>
+      <input type="radio" name="hardcoded-location" value="dubai">Dubai</input>
+    </div>
+
+  	<script src="https://unpkg.com/react@15/dist/react.js"></script>
+  	<script src="https://unpkg.com/react-dom@15/dist/react-dom.js"></script>
+    <!-- to be able to run react standalone from a filesystem-->
+    <script src="https://unpkg.com/babel-standalone@6.15.0/babel.min.js"></script>
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAmOW168dn7Yv2K2zZBl6WkZmc2dxlZZeA&libraries=places,geometry&sensor"></script>
+
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.1.1/jquery.min.js"></script>
+
+    <script type="text/jsx">
+
+      /**google maps*/
+      var map;
+      var infowindow;
+      var placesService;
+      var userGeoLocation = null;
+      var hardCodedLocations = {
+        "abu-dhabi": {lat:24.3756615, lng:54.59152223},
+        "dubai": {lat:25.21156791, lng:55.26924139}
+      }
+
+      function getUserGeoLocation(callback) {
+        if (userGeoLocation != null) {
+          callback(userGeoLocation);
+        }
+        var hardCodedLocation = $(".hardcoded-locations input[type='radio']:checked").val();
+        if (hardCodedLocation && hardCodedLocation !== 'none') {
+            userGeoLocation = hardCodedLocations[hardCodedLocation];
+            console.log('hard coded location '+hardCodedLocation+' lat/lng',userGeoLocation.lat,userGeoLocation.lng);
+            callback(userGeoLocation);
+        } else if (navigator.geolocation) {
+          navigator.geolocation.getCurrentPosition(function(position) {
+            var userGeoLocation = {
+                lat: position.coords.latitude,
+                lng: position.coords.longitude
+              };
+            console.log('user real location lat/lng',position.coords.latitude,position.coords.longitude);
+            callback(userGeoLocation);
+          }, function() {
+            handleLocationError('Error: The Geolocation service failed.');
+            callback(null);
+          });
+        } else {
+          handleLocationError('Error: Your browser doesn\'t support geolocation.');
+          callback(null);
+        }
+
+        console.log('using user geo location lat/lng',userGeoLocation.lat,userGeoLocation.lng);
+      }
+
+      function initMap(callback) {
+        map = new google.maps.Map(document.getElementById('map'), {
+          center:  {lat: -34.397, lng: 150.644},
+          zoom: 9
+        });
+
+        infowindow = new google.maps.InfoWindow({map: map});
+
+        getUserGeoLocation((position) => {
+          if (position != null) {
+            map.setCenter(position);
+            google.maps.event.addListener(map, 'idle', function() {
+              placesService = new google.maps.places.PlacesService(map);
+              callback(map);
+            });
+          }
+        })
+      }
+
+    	function createMarker(latlng, description, icon) {
+    	  var placeLoc = latlng;
+    	  var marker = new google.maps.Marker({
+      		map: map,
+      		position: latlng
+    	  });
+
+        if (icon) {
+          marker.setIcon(icon);
+        }
+
+    	  google.maps.event.addListener(marker, 'click', function() {
+      		infowindow.setContent(description);
+      		infowindow.open(map, this);
+    	  });
+    	}
+
+      function handleLocationError(msg) {
+        alert(msg);
+      }
+
+      function mapSearch(keyword, callback) {
+        var request = {
+          bounds: map.getBounds(),
+          keyword: keyword
+        };
+        placesService.radarSearch(request, callback);
+      }
+      /**eo google maps*/
+
+      /**open weather map*/
+      function getWeather(lat, lng, callback) {
+        var fiveDayForecast = `http://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lng}&APPID=2e34d8d2b77a224309d70bb7213df247`;
+        $.ajax({url: fiveDayForecast, async: false, success: callback});
+      }
+      /**eo open weather map*/
+
+      /**reactjs*/
+
+      var globalState = {
+        locations: []
+      };
+
+      function isApplicable(forecasts) {
+        // threshold needs to be quite high because we include night times in forecasts.
+        var problemThresholdRatio = .75;
+        var evaluated = [];
+        for (var i=0; i<forecasts.length; i++) {
+          var applicable = true;
+          if (forecasts[i].problems.length > 0) {
+            // the weather is bad
+            applicable = false;
+          }
+          evaluated.push(applicable);
+        }
+        var problems = evaluated.filter((p) => !p);
+        console.log('eval result',problems.length / evaluated.length);
+        return problems.length / evaluated.length < problemThresholdRatio;
+      }
+
+      class Choose extends React.Component {
+        render() {
+          return(
+            <div className="choose">
+              <div style={{"paddingBottom": "20px"}}>
+                <span>Welcome!</span><br/><br/>
+                <span>Please choose the activity you wish to do:</span>
+              </div>
+              <div><a href="#applicability/kitesurfing" className="btn btn-primary activity-btn btn-lg" role="button">kitesurfing <span className="glyphicon glyphicon glyphicon-menu-right"></span></a></div>
+              <div><a href="#applicability/sailing" className="btn btn-primary activity-btn btn-lg" role="button">sailing <span className="glyphicon glyphicon glyphicon-menu-right"></span></a></div>
+              <div><a href="#applicability/photography" className="btn btn-primary   activity-btn btn-lg" role="button">photography <span className="glyphicon glyphicon glyphicon-menu-right"></span></a></div>
+            </div>
+          )
+        }
+      };
+
+      class DisplayProblems extends React.Component {
+
+        render() {
+          return(
+            <div>
+              <span>We detected some problems regarding the acticity you chose. You can review the details <a href="#map">on the map</a>.</span>
+              <div className="thumb-img">
+                <img src={"thumbsdown/img_1.jpg"} />
+              </div>
+            </div>
+
+          )
+        }
+      }
+
+      class Applicability extends React.Component {
+
+        /*
+        temp in celsius
+        wind speed in meter/second
+        rain in millimeters per three hours
+
+        we're basically interested in:
+          list.0.main.temp (within given range)
+          list.0.main.wind.speed (within given range)
+          list.0.main.snow/rain.3h (if any within the day)
+
+        todo: add wind direction (check original version)
+        */
+        checks = {
+          kitesurfing: {
+            temp: (temp) => { return temp > 20 ? null : "Temperature is too low"},
+            windSpeed: (windSpeed) => { return windSpeed > 3.57 && windSpeed < 5.36  ? null : "Wind speed is too low or too high"},
+            rain: (rain) => {return typeof rain == 'undefined' ? null : "There's rain"},
+            snow: (snow) => {return typeof snow == 'undefined' ? null : "There's snow!!"}
+          },
+          sailing: {
+            temp: (temp) => { return temp > 20 ? null : "Temperature is too low"},
+            windSpeed: (windSpeed) => { return windSpeed > 3.57 && windSpeed < 5.36  ? null : "Wind speed is too low or too high"},
+            rain: (rain) => {return typeof rain == 'undefined' ? null : "There's rain"},
+            snow: (snow) => {return typeof snow == 'undefined'  ? null : "There's snow!!"}
+          },
+          photography: {
+            temp: (temp) => { return null; /*any weather is good for photography*/ },
+            windSpeed: (windSpeed) => { return null /*windSpeed == 0 || windSpeed > 9*/ },
+            rain: (rain) => {return null; },
+            snow: (snow) => {return null; }
+          }
+        }
+
+        constructor(props) {
+          super(props);
+
+          this.state = {
+            applicable: [],
+            ready: false
+          }
+        }
+
+        getFormattedTime(weatherMapResult) {
+          var date = new Date(weatherMapResult.dt*1000);
+          var hours = date.getHours();
+          var minutes = "0" + date.getMinutes();
+          var seconds = "0" + date.getSeconds();
+          return hours + ':' + minutes.substr(-2) + ':' + seconds.substr(-2);
+        }
+
+        getOrUndefined(obj, ...paths) {
+          var current = obj;
+          for (let path of paths) {
+            if (current[path] != 'undefined' && current[path]) {
+              current = current[path];
+            } else {
+              return undefined;
+            }
+          }
+          return current;
+        }
+
+        forecastResultToInternalDataType(result, check) {
+          var f = {
+            time: this.getFormattedTime(result),
+            data: {
+              temp: result.main.temp - 273.15,
+              windSpeed: this.getOrUndefined(result, 'wind', 'speed'),
+              rain: this.getOrUndefined(result, 'rain', '3h'),
+              snow: this.getOrUndefined(result, 'snow', '3h')
+            },
+            problems: []
+          };
+
+          f.problems.push(check.temp(f.data.temp));
+          f.problems.push(check.windSpeed(f.data.windSpeed));
+          f.problems.push(check.rain(f.data.rain));
+          f.problems.push(check.snow(f.data.snow));
+          f.problems = f.problems.filter((p) => p != 'undefined' && p);
+
+          return f;
+        }
+
+        evaluateLocations(results, status) {
+          if (status == google.maps.places.PlacesServiceStatus.OK) {
+
+            // reset state
+            globalState.locations =  [];
+            // just use the first three locations (limit for free openweathermap API account is 60 calls per minute).
+            for (var n=0; n<results.length; n++) {
+              if (n > 2) {
+                break ;
+              }
+
+              var lat = results[n].geometry.location.lat();
+              var lng = results[n].geometry.location.lng();
+              getWeather(lat,lng, (results) => {
+
+                var forecasts = [];
+                var check = this.checks[this.props.activity];
+                // openweathermap api returns forecasts for the next 5 days, at three hour intervals.
+                // loop through forecasts for the next 24h (3h * 8 = 24h)
+                for (var i=0;i<8;i++) {
+                  var result = results.list[''+i];
+                  forecasts.push(this.forecastResultToInternalDataType(result, check));
+                }
+
+                globalState.locations.push({
+                    latlng: {lat: lat, lng: lng},
+                    forecasts: forecasts
+                  });
+
+                var applicable = isApplicable(forecasts);
+                this.setState({applicable: this.state.applicable.concat([applicable])});
+                console.log('global state', globalState);
+
+                this.setState({ready: true})
+              });
+            }
+
+          } else {
+            alert('Error with getting nearby locations')
+          }
+        }
+
+        componentDidMount() {
+          initMap(() => {
+            // isntead of 'this.props.activity' just search for swimming beaches
+            mapSearch('swimming beach', (locations,status) => {
+              this.evaluateLocations(locations,status);
+            })
+          });
+        }
+
+        render() {
+          var random = Math.floor(Math.random() * 15) + 1;
+          return(
+            <div>
+              <div id="results">
+                  {!this.state.ready ? (
+                <div className="loader-wrapper">
+                  <div className="loader-text">Loading... Please wait.<br /><i>Note: Please allow for this application to query for your location.</i></div>
+                  <div className="loader"></div>
+                </div>
+              ) : this.state.applicable.indexOf(false) == -1 ? (
+                <div>
+                  <p>Great! Looks like its a good weather for your activity</p>
+                  <p><a href="#map">See it on the map</a></p>
+                  <div className="thumb-img">
+                    <img src={"thumbsup/img_"+random+".jpg"} />
+                  </div>
+                </div>
+              ) : (
+                <DisplayProblems />
+              )}</div>
+              <div id="map" style={{"visibility": "hidden","width": "100%", "height": "600px", "backgroundColor": "#eee"}}></div>
+            </div>
+          )
+        }
+      };
+
+      class Map extends React.Component {
+
+        constructor(props) {
+          super(props);
+
+          this.state = {
+            error: false
+          }
+        }
+
+        getNumberForUi(number) {
+          return parseFloat(Math.round(number * 100) / 100).toFixed(2);
+        }
+
+        componentDidMount() {
+          initMap(() => {
+            if (!globalState.locations) {
+              this.setState({error: true});
+            } else {
+              globalState.locations.forEach((location) => {
+                var description = '';
+                var locationApplicable = isApplicable(location.forecasts)
+                var iconColor = 'green';
+                if (!locationApplicable) {
+                  iconColor = 'red';
+                }
+                location.forecasts.forEach((forecast) => {
+                  description += '<p class="forecast-time">'+forecast.time+'</p>';
+                  description += '<p class="forecast-data">'+
+                    'Temperature: ' + this.getNumberForUi(forecast.data.temp) + '&#8451' +
+                    '<br />Wind speed: ' + this.getNumberForUi(forecast.data.windSpeed) + 'm/s' +
+                    '</p>';
+
+                  if (forecast.problems.length > 0) {
+                    description += '<p class="problem-header">Problems:</p><p class="problem-line">'
+                    forecast.problems.forEach((problem) => {
+                      description += problem+'<br/>'
+                    })
+                    description += '</p>'
+                  }
+                })
+
+                createMarker(location.latlng, description, `http://maps.google.com/mapfiles/ms/icons/${iconColor}-dot.png`);
+              });
+            }
+          });
+        }
+
+        render() {
+          return(
+            <div>
+              {this.state.error ? (
+                <span>The application has entered an error state. Please start from the beginning by clicking <a href="index.html">here</a></span>
+              ) : (
+                <span><a href="index.html">Back to start</a></span>
+              )}
+              <div id="map" style={{"width": "100%", "height": "600px", "backgroundColor": "#eee"}}></div>
+            </div>
+          )
+        }
+      }
+
+      function navigated() {
+        var state = window.location.hash.replace(/^#\/?|\/$/g, '').split('/');
+        var hash = state[0];
+        var component;
+        var firstView = hash === 'choose' || hash === '' || !hash;
+        if (firstView) {
+          component = <Choose />
+        } else if (hash === 'applicability') {
+          var activity = state[1];
+          component = <Applicability activity = {activity} />
+        } else if (hash === 'map') {
+          component = <Map />
+        } else {
+          component = <div><p>Page not found</p></div>
+        }
+
+        // hide predefined locations
+        $('.hardcoded-locations').css('visibility', firstView ? 'visible' : 'hidden');
+
+        ReactDOM.render(
+          component,
+          document.getElementById('react-app')
+        )
+      }
+
+      window.addEventListener('hashchange', navigated, false);
+      navigated();
+
+    </script>
+  </body>
+</html>
