@@ -165,7 +165,7 @@
         }
 
         if (userGeoLocation) {
-          console.log('using user geo location lat/lng',userGeoLocation.lat,userGeoLocation.lng);  
+          console.log('using user geo location lat/lng',userGeoLocation.lat,userGeoLocation.lng);
         }
       }
 
@@ -218,15 +218,7 @@
       }
       /**eo google maps*/
 
-      /**open weather map*/
-      function getWeather(lat, lng, callback) {
-        var fiveDayForecast = `http://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lng}&APPID=2e34d8d2b77a224309d70bb7213df247`;
-        $.ajax({url: fiveDayForecast, async: false, success: callback});
-      }
-      /**eo open weather map*/
-
       /**reactjs*/
-
       var globalState = {
         locations: []
       };
@@ -364,11 +356,40 @@
           return f;
         }
 
+        /**open weather map*/
+        getWeather(lat, lng, callback) {
+          var fiveDayForecast = `http://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lng}&APPID=2e34d8d2b77a224309d70bb7213df247`;
+          $.ajax({url: fiveDayForecast, async: false, success: callback});
+        }
+
+        getWeatherForLatLng(lat, lng, resolve, reject) {
+          this.getWeather(lat,lng, (results) => {
+            var forecasts = [];
+            var check = this.checks[this.props.activity];
+            // openweathermap api returns forecasts for the next 5 days, at three hour intervals.
+            // loop through forecasts for the next 24h (3h * 8 = 24h)
+            for (var i=0;i<8;i++) {
+              var result = results.list[''+i];
+              forecasts.push(this.forecastResultToInternalDataType(result, check));
+            }
+
+            globalState.locations.push({
+                latlng: {lat: lat, lng: lng},
+                forecasts: forecasts
+              });
+
+            var applicable = isApplicable(forecasts);
+            this.setState({applicable: this.state.applicable.concat([applicable])});
+            resolve();
+          });
+        }
+
         evaluateLocations(results, status) {
           if (status == google.maps.places.PlacesServiceStatus.OK) {
 
             // reset state
             globalState.locations =  [];
+            var promises = [];
             // just use the first three locations (limit for free openweathermap API account is 60 calls per minute).
             for (var n=0; n<results.length; n++) {
               if (n > 2) {
@@ -377,29 +398,14 @@
 
               var lat = results[n].geometry.location.lat();
               var lng = results[n].geometry.location.lng();
-              getWeather(lat,lng, (results) => {
-
-                var forecasts = [];
-                var check = this.checks[this.props.activity];
-                // openweathermap api returns forecasts for the next 5 days, at three hour intervals.
-                // loop through forecasts for the next 24h (3h * 8 = 24h)
-                for (var i=0;i<8;i++) {
-                  var result = results.list[''+i];
-                  forecasts.push(this.forecastResultToInternalDataType(result, check));
-                }
-
-                globalState.locations.push({
-                    latlng: {lat: lat, lng: lng},
-                    forecasts: forecasts
-                  });
-
-                var applicable = isApplicable(forecasts);
-                this.setState({applicable: this.state.applicable.concat([applicable])});
-                console.log('global state', globalState);
-
-                this.setState({ready: true})
-              });
+              promises.push(new Promise((resolve, reject) => {
+                this.getWeatherForLatLng(lat, lng, resolve, reject);
+              }));
             }
+
+            Promise.all(promises).then(() => {
+              this.setState({ready: true});
+            });
 
           } else {
             alert('Error with getting nearby locations')
@@ -530,6 +536,7 @@
       }
 
       window.addEventListener('hashchange', navigated, false);
+      // entry point
       navigated();
 
     </script>
